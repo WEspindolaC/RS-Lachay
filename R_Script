@@ -1,0 +1,72 @@
+#librerias necesarias
+base::library(rgdal)
+base::library(raster)
+base::library(caret)
+base::library(snow)
+base::library(pROC)
+
+#importar imagenes Landsat en R como objeto RasterBrick usando Brick
+filename<-raster("D:/Users/Walter/Documents/Tesis/Data/LC80080682014113LGN00/_Escena_clip/Individual/clipQ_RT_LC80080682014113LGN00_B7_.tif")
+filename
+#histograma con valores
+hist(filename)
+#plotear imagen
+plot(filename)
+#definir area a cortar
+cropbox<-c(237000,248000,-1264000,-1252000)
+#cortar el raster
+Band7<-filename_crop<-crop(filename, cropbox)
+#plotear el raster cortado
+plot(filename_crop)
+#exportar raster
+writeFormats() #saber que tipo de formato soporta
+raster::writeRaster(filename_crop, filename = "B7", format ="GTiff", overwrite=TRUE)
+#importar como objeto RasterBrick
+img<-brick(Band2,Band3,Band4,Band5,Band6,Band7)
+img
+#reemplazando nombres de las bandas con nombres mas cortos
+names(img)<-c(paste0("B",2:7, coll =""))
+names(img)
+img
+#generar visualizacion RGB
+raster::plotRGB(img*(img>=0), r=3, g=2, b=1, scale=1)
+#data de estrenamiento
+TrainData3<-read.csv(file.choose(), head = TRUE)
+#Ajuste de modelo y clasificación de imagen RANDOMFOREST
+names(getModelInfo())
+mod_Fit_rf<-train(as.factor(class)~B2+B4+B6, method ="rf", data = TrainData3)
+mod_Fit_rf
+#data de testeo
+TestingData3<-read.csv(file.choose(), head = TRUE)
+preds.rf.tesis<-predict(mod_Fit_rf, TestingData3)
+preds.rf.tesis
+#matrix confusion
+table(TestingData3[,4],preds.rf.tesis)
+#Important features
+modImp<-varImp(mod_Fit_rf,scale = FALSE)
+modImp
+plot(modImp)
+#
+
+#Accuracy vs mtry
+plot(mod_Fit_rf)
+print(mod_Fit_rf)
+#ROC
+selectedIndices<-mod_Fit_rf$pred$mtry == 2
+ROC<-ggplot(mod_Fit_rf$pred[selectedIndices, ], aes(m=M, d=factor(obs, levels = c("R", "M")))) +
+  geom_roc(n.cuts=0) +
+  coord_equal() +
+  style_roc()
+ROC + annotate("text", x=0.75, y=0.25, label=paste("AUC =", round((calc_aug(g))$AUC, 4)))
+#generar Raster clasificado *snow
+beginCluster()
+system.time(preds_rf<-clusterR(img, raster::predict, args = list(mod_Fit_rf)))
+endCluster()
+#detalles del raster generado
+preds_rf
+print(preds_rf)
+#editar colores de raster
+colors<-c("khaki3", "cyan3", "steelblue2","tan3", "tan4", "springgreen3", "black")
+plot(preds_rf,col=colors)
+#exportar nuevo raster
+raster::writeRaster(filename_crop, filename = "RFraster", format ="GTiff", overwrite=TRUE)
